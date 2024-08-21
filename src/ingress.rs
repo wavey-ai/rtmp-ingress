@@ -4,6 +4,7 @@ use futures::SinkExt;
 use srt_tokio::{options::*, SrtListener, SrtSocket};
 use std::error::Error;
 use std::io;
+use std::net::SocketAddr;
 use std::time::Instant;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -17,7 +18,10 @@ const RTP_NEW: &str = "SRT:NEW";
 const RTP_UP: &str = "SRT:UP";
 const RTP_DOWN: &str = "SRT:DOWN";
 
-pub async fn start_rtmp_listener() -> Result<
+pub async fn start_rtmp_listener(
+    rtp_addr: SocketAddr,
+    srt_addr: SocketAddr,
+) -> Result<
     (
         oneshot::Receiver<()>,
         oneshot::Receiver<()>,
@@ -32,7 +36,7 @@ pub async fn start_rtmp_listener() -> Result<
     let mut current_id = 0;
 
     let srv = async move {
-        let listener = TcpListener::bind("0.0.0.0:1935").await.unwrap();
+        let listener = TcpListener::bind(rtp_addr).await.unwrap();
         up_tx.send(());
         loop {
             tokio::select! {
@@ -59,27 +63,25 @@ pub async fn start_rtmp_listener() -> Result<
                         });
 
 
-                        // block waiting for stream key
-                        let stream_key = rx_key.await;
+                        if let Ok(stream_key) = rx_key.await {
+                            match SrtSocket::builder().call(srt_addr, Some(&stream_key)).await {
+                                Ok(mut socket) => {
+                                    let mut stream = ReceiverStream::new(ts_rx)
+                                        .map(|bytes| {
+                                            Ok((Instant::now(), bytes)) as Result<(Instant, Bytes), io::Error>
+                                        });
 
-                        match SrtSocket::builder().call("127.0.0.1:8000", None).await {
-                            Ok(mut socket) => {
-                                let mut stream = ReceiverStream::new(ts_rx)
-                                    .map(|bytes| {
-                                        Ok((Instant::now(), bytes)) as Result<(Instant, Bytes), io::Error>
-                                    });
-
-                                match socket.send_all(&mut stream).await {
-                                    Ok(_) => {
-                                        dbg!("hmmmm");
-                                    },
-                                    Err(err ) => {
-                                        dbg!(err);
+                                    match socket.send_all(&mut stream).await {
+                                        Ok(_) => {
+                                        },
+                                        Err(err ) => {
+                                            dbg!(err);
+                                        }
                                     }
                                 }
-                            }
-                            Err(e) => {
-                                dbg!(e);
+                                Err(e) => {
+                                    dbg!(e);
+                                }
                             }
                         }
                     });
