@@ -27,7 +27,11 @@ impl VideoType {
     }
 }
 
-pub fn extract_au(packet: Bytes, timestamp: i64) -> Result<AccessUnit, Box<dyn Error>> {
+pub fn extract_au(
+    packet: Bytes,
+    timestamp: i64,
+    sps_pps: Option<&Bytes>,
+) -> Result<(AccessUnit, bool), Box<dyn Error>> {
     let codec = packet.get(0).ok_or("Packet is empty")? & 0x0F;
 
     if codec != VIDEO_H264 {
@@ -66,13 +70,16 @@ pub fn extract_au(packet: Bytes, timestamp: i64) -> Result<AccessUnit, Box<dyn E
             data.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
             data.extend_from_slice(&pps_data);
 
-            Ok(AccessUnit {
-                avc: true,
-                key: false,
-                pts,
-                dts: pts,
-                data: data.freeze(),
-            })
+            Ok((
+                AccessUnit {
+                    avc: true,
+                    key: false,
+                    pts,
+                    dts: pts,
+                    data: data.freeze(),
+                },
+                true,
+            ))
         }
         Some(VideoType::Nalu) | Some(VideoType::Eos) => {
             let cts = (((packet[2] as u32) << 16) | ((packet[3] as u32) << 8) | (packet[4] as u32))
@@ -81,14 +88,54 @@ pub fn extract_au(packet: Bytes, timestamp: i64) -> Result<AccessUnit, Box<dyn E
             let pts = cts + timestamp as u64;
             let dts = timestamp as u64;
 
-            Ok(AccessUnit {
-                avc: true,
-                key: false,
-                pts,
-                dts,
-                data: packet.slice(5..),
-            })
+            let nalus: BytesMut = lp_to_nal_start_code(packet.slice(5..));
+            let mut data = BytesMut::new();
+            if let Some(sps_pps_data) = sps_pps {
+                data.extend_from_slice(&sps_pps_data);
+            }
+            data.extend_from_slice(&nalus);
+
+            Ok((
+                AccessUnit {
+                    avc: true,
+                    key: false,
+                    pts,
+                    dts,
+                    data: data.freeze(),
+                },
+                false,
+            ))
         }
         _ => return Err("Unsupported or unknown video message type".into()),
     }
+}
+
+pub fn lp_to_nal_start_code(flv_data: Bytes) -> BytesMut {
+    let mut nal_units = BytesMut::new();
+    let mut offset: usize = 0;
+
+    while offset < flv_data.len() {
+        if offset + 4 > flv_data.len() {
+            break;
+        }
+
+        // Extract the NALU length (first 4 bytes) as Bytes and convert to [u8; 4]
+        let nalu_length_bytes = flv_data.slice(offset..offset + 4);
+        let nalu_length =
+            u32::from_be_bytes(nalu_length_bytes.as_ref().try_into().unwrap()) as usize;
+        offset += 4;
+
+        if offset + nalu_length > flv_data.len() {
+            break;
+        }
+
+        // Append the NAL start code
+        nal_units.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+
+        // Append the NAL unit data
+        nal_units.extend_from_slice(&flv_data.slice(offset..offset + nalu_length));
+        offset += nalu_length;
+    }
+
+    nal_units
 }

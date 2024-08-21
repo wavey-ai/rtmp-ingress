@@ -2,7 +2,6 @@ use crate::aac::ensure_adts_header;
 use crate::connection_action::ConnectionAction;
 use crate::flv;
 use crate::state::State;
-use ts::AccessUnit;
 use bytes::{Bytes, BytesMut};
 use chrono::Duration;
 use futures::future::FutureExt;
@@ -21,6 +20,7 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{error, info};
+use ts::AccessUnit;
 
 pub struct Connection {
     id: i32,
@@ -28,8 +28,7 @@ pub struct Connection {
     state: State,
     pub metadata: Option<StreamMetadata>,
     api_addr: Option<String>,
-    sps: Option<Bytes>,
-    pps: Option<Bytes>,
+    sps_pps: Option<Bytes>,
     tx: mpsc::Sender<AccessUnit>,
     txc: broadcast::Sender<()>,
 }
@@ -42,8 +41,7 @@ impl Connection {
             state: State::Waiting,
             metadata: None,
             api_addr: None,
-            sps: None,
-            pps: None,
+            sps_pps: None,
             tx,
             txc,
         }
@@ -335,8 +333,19 @@ impl Connection {
                 data,
             } => {
                 let is_key_frame = is_video_keyframe(&data);
-                if let Ok(mut au) = flv::extract_au(data, timestamp.value as i64) {
-                    au.key = is_key_frame;
+                let sps_pps = self.sps_pps.as_ref();
+
+                if let Ok((mut au, is_avcc)) =
+                    flv::extract_au(data, timestamp.value as i64, sps_pps)
+                {
+                    if is_avcc {
+                        self.sps_pps = Some(au.data.clone());
+                    }
+
+                    if is_key_frame {
+                        au.key = true;
+                    }
+
                     match self.tx.try_send(au) {
                         Ok(_) => {
                             return Ok(ConnectionAction::None);
