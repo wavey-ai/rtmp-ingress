@@ -1,7 +1,6 @@
-use au::{AuKind, AuPayload};
-use bytes::Bytes;
-use chrono::Duration;
+use bytes::{Bytes, BytesMut};
 use std::error::Error;
+use ts::AccessUnit;
 
 enum FrameType {
     FrameKey = 1,
@@ -28,30 +27,22 @@ impl VideoType {
     }
 }
 
-pub fn extract_au(packet: Bytes, timestamp: i64) -> Result<AuPayload, Box<dyn Error>> {
-    let mut au = AuPayload::new();
-
+pub fn extract_au(packet: Bytes, timestamp: i64) -> Result<AccessUnit, Box<dyn Error>> {
     let codec = packet.get(0).ok_or("Packet is empty")? & 0x0F;
 
     if codec != VIDEO_H264 {
         return Err("Unsupported codec".into());
     }
 
-    au.key = (packet[0] >> 4) == FrameType::FrameKey as u8;
-
     match VideoType::from_u8(packet[1]) {
         Some(VideoType::SeqHead) => {
-            au.kind = AuKind::AVCC;
-
             let pts = (((packet[2] as u32) << 16) | ((packet[3] as u32) << 8) | (packet[4] as u32))
-                as i64;
-            au.pts = Some(Duration::milliseconds(pts));
+                as u64;
 
             let avcc_start = 5;
             let nalu_length = avcc_start + 5;
 
             // Parsing SPS
-            let num_sps = packet[nalu_length] & 0x1F;
             let sps_length_pos = nalu_length + 1;
             let sps_length =
                 ((packet[sps_length_pos] as u16) << 8) | (packet[sps_length_pos + 1] as u16);
@@ -61,7 +52,6 @@ pub fn extract_au(packet: Bytes, timestamp: i64) -> Result<AuPayload, Box<dyn Er
             let sps_data = packet.slice(sps_start..sps_end);
 
             // Parsing PPS
-            let num_pps = packet[sps_end];
             let pps_length_pos = sps_end + 1;
             let pps_length =
                 ((packet[pps_length_pos] as u16) << 8) | (packet[pps_length_pos + 1] as u16);
@@ -70,22 +60,35 @@ pub fn extract_au(packet: Bytes, timestamp: i64) -> Result<AuPayload, Box<dyn Er
 
             let pps_data = packet.slice(pps_start..pps_end);
 
-            au.sps = Some(sps_data);
-            au.pps = Some(pps_data);
+            let mut data = BytesMut::new();
+            data.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+            data.extend_from_slice(&sps_data);
+            data.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+            data.extend_from_slice(&pps_data);
+
+            Ok(AccessUnit {
+                avc: true,
+                key: false,
+                pts,
+                dts: pts,
+                data: data.freeze(),
+            })
         }
         Some(VideoType::Nalu) | Some(VideoType::Eos) => {
-            au.data = Some(packet.slice(5..));
-            if matches!(VideoType::from_u8(packet[1]), Some(VideoType::Nalu)) {
-                au.kind = AuKind::AVC;
-            }
             let cts = (((packet[2] as u32) << 16) | ((packet[3] as u32) << 8) | (packet[4] as u32))
-                as i64;
+                as u64;
 
-            au.pts = Some(Duration::milliseconds(cts + timestamp));
-            au.dts = Some(Duration::milliseconds(timestamp));
+            let pts = cts + timestamp as u64;
+            let dts = timestamp as u64;
+
+            Ok(AccessUnit {
+                avc: true,
+                key: false,
+                pts,
+                dts,
+                data: packet.slice(5..),
+            })
         }
         _ => return Err("Unsupported or unknown video message type".into()),
     }
-
-    Ok(au)
 }
