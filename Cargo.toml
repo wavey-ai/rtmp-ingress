@@ -9,7 +9,6 @@ bytes = "1"
 chrono = "0.4.38"
 rml_rtmp = { git = "https://github.com/wavey-ai/rust-media-libs.git" }
 ts = { path = "../ts" }
-metrics = { git = "ssh://git@github.com/wavey-ai/metrics.git" }
 tracing = "0.1.40"
 futures = "0.3.30"
 xmpegts = { git = "https://github.com/wavey-ai/xiu" }
