@@ -1330,6 +1330,7 @@ dependencies = [
 [[package]]
 name = "ts"
 version = "0.1.0"
+source = "git+ssh://git@github.com/wavey-ai/ts.git#e1149faadecf3efc1b84f71b172ff1f7404a602a"
 dependencies = [
  "anyhow",
  "byteorder",

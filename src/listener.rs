@@ -155,7 +155,7 @@ impl Connection {
         }
 
         self.tx_shutdown.send(());
-        println!("Connection {}: Client disconnected", self.id);
+        info!("Connection {}: Client disconnected", self.id);
 
         Ok(())
     }
@@ -193,7 +193,7 @@ impl Connection {
                 }
 
                 ServerSessionResult::UnhandleableMessageReceived(payload) => {
-                    println!(
+                    info!(
                         "Connection {}: Unhandleable message received: {:?}",
                         self.id, payload
                     );
@@ -217,13 +217,13 @@ impl Connection {
                 request_id,
                 app_name,
             } => {
-                println!(
+                info!(
                     "Connection {}: Client requested connection to app {:?}",
                     self.id, app_name
                 );
 
                 if self.state != State::Waiting {
-                    eprintln!(
+                    error!(
                         "Connection {}: Client was not in the waiting state, but was in {:?}",
                         self.id, self.state
                     );
@@ -252,7 +252,7 @@ impl Connection {
                 mode,
                 stream_key,
             } => {
-                println!(
+                info!(
                     "Connection {}: Client requesting publishing on {}/{} in mode {:?}",
                     self.id, app_name, stream_key, mode
                 );
@@ -297,7 +297,7 @@ impl Connection {
                 app_name: _,
                 metadata,
             } => {
-                println!(
+                info!(
                     "Connection {}: New metadata published for stream key '{}': {:?}",
                     self.id, stream_key, metadata
                 );
@@ -309,7 +309,7 @@ impl Connection {
                     }
 
                     _ => {
-                        eprintln!(
+                        error!(
                             "Connection {}: expected client to be in publishing state, was in {:?}",
                             self.id, self.state
                         );
@@ -401,7 +401,7 @@ impl Connection {
                 }
 
                 _ => {
-                    eprintln!(
+                    error!(
                         "Connection {}: Expected client to be in publishing state, was in {:?}",
                         self.id, self.state
                     );
@@ -409,7 +409,7 @@ impl Connection {
                 }
             },
 
-            x => println!("Connection {}: Unknown event raised: {:?}", self.id, x),
+            x => info!("Connection {}: Unknown event raised: {:?}", self.id, x),
         }
 
         Ok(ConnectionAction::None)
@@ -437,7 +437,7 @@ async fn connection_reader(
         buffer = bytes;
     }
 
-    println!("Connection {}: Reader disconnected", connection_id);
+    info!("Connection {}: Reader disconnected", connection_id);
     Ok(())
 }
 
@@ -469,7 +469,7 @@ async fn connection_writer(
 
         let mut send_optional_packets = true;
         if send_queue.len() > BACKLOG_THRESHOLD {
-            println!(
+            info!(
                 "Connection {}: Too many pending packets, dropping optional ones",
                 connection_id
             );
@@ -483,7 +483,7 @@ async fn connection_writer(
         }
     }
 
-    println!("Connection {}: Writer disconnected", connection_id);
+    info!("Connection {}: Writer disconnected", connection_id);
     Ok(())
 }
 
@@ -499,7 +499,7 @@ where
 {
     tokio::task::spawn(async {
         if let Err(error) = future.await {
-            eprintln!("{}", error);
+            error!("{}", error);
         }
     });
 }
