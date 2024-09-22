@@ -3,6 +3,14 @@
 version = 3
 
 [[package]]
+name = "access-unit"
+version = "0.0.2"
+source = "git+https://github.com/wavey-ai/access-unit.git#18e3166041ac77e6c5dcdb5ab2bf040ffbb781fc"
+dependencies = [
+ "bytes",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -934,6 +942,7 @@ dependencies = [
 name = "rtmp_ingress"
 version = "0.1.0"
 dependencies = [
+ "access-unit",
  "bytes",
  "chrono",
  "futures",

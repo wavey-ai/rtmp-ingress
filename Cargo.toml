@@ -13,5 +13,6 @@ tracing = "0.1.40"
 futures = "0.3.30"
 xmpegts = { git = "https://github.com/wavey-ai/xiu" }
 mse_fmp4 = { git = "https://github.com/wavey-ai/mse_fmp4.git" }
+access-unit = { git = "https://github.com/wavey-ai/access-unit.git" }
 srt-tokio = "0.4.4"
 tokio-stream = "0.1.15"
