@@ -372,6 +372,7 @@ impl Connection {
                                 pts: timestamp.value as u64,
                                 key: false,
                                 avc: false,
+                                id: 0,
                             }) {
                                 Ok(_) => {
                                     return Ok(ConnectionAction::None);

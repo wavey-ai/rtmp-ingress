@@ -77,6 +77,7 @@ pub fn extract_au(
                     pts,
                     dts: pts,
                     data: data.freeze(),
+                    id: 0,
                 },
                 true,
             ))
@@ -102,6 +103,7 @@ pub fn extract_au(
                     pts,
                     dts,
                     data: data.freeze(),
+                    id: 100,
                 },
                 false,
             ))
