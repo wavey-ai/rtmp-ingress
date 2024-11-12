@@ -2568,7 +2568,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "ts"
 version = "0.1.0"
-source = "git+ssh://git@github.com/wavey-ai/ts.git#80584b51c513ec02e09a98c9996ed038a138fa2a"
+source = "git+ssh://git@github.com/wavey-ai/ts.git#c501159a9290351735b06c636d08042a85131146"
 dependencies = [
  "access-unit",
  "anyhow",
