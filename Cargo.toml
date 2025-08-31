@@ -8,7 +8,6 @@ tokio = { version = "1.35.1", features = ["full"] }
 bytes = "1"
 chrono = "0.4.38"
 rml_rtmp = { git = "ssh://git@github.com/wavey-ai/rust-media-libs.git" }
-ts = { git = "ssh://git@github.com/wavey-ai/ts.git" }
 tracing = "0.1.40"
 futures = "0.3.30"
 xmpegts = { git = "ssh://git@github.com/wavey-ai/xiu" }
