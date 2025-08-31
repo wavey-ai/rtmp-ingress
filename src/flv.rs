@@ -72,7 +72,7 @@ pub fn extract_au(
 
             Ok((
                 AccessUnit {
-                    avc: true,
+                    stream_type: access_unit::PSI_STREAM_H264,
                     key: false,
                     pts,
                     dts: pts,
@@ -98,7 +98,7 @@ pub fn extract_au(
 
             Ok((
                 AccessUnit {
-                    avc: true,
+                    stream_type: access_unit::PSI_STREAM_H264, 
                     key: false,
                     pts,
                     dts,

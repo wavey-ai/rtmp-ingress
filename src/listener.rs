@@ -371,7 +371,7 @@ impl Connection {
                                 dts: timestamp.value as u64,
                                 pts: timestamp.value as u64,
                                 key: false,
-                                avc: false,
+                                stream_type: access_unit::PSI_STREAM_AAC,
                                 id: 0,
                             }) {
                                 Ok(_) => {
