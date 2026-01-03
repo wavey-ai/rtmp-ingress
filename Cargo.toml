@@ -3,6 +3,10 @@ name = "rtmp-ingress"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+upload-response = ["dep:upload-response", "dep:http-pack"]
+
 [dependencies]
 tokio = { version = "1.35.1", features = ["full"] }
 bytes = "1"
@@ -15,3 +19,8 @@ mse_fmp4 = { git = "ssh://git@github.com/wavey-ai/mse_fmp4.git" }
 srt-tokio = "0.4.4"
 tokio-stream = "0.1.15"
 access-unit = "0.1.1"
+gatekeeper = { git = "ssh://git@github.com/wavey-ai/gatekeeper.git" }
+
+# Optional deps for upload-response integration
+upload-response = { path = "../web-services/upload-response", optional = true }
+http-pack = { path = "../http-pack", optional = true }

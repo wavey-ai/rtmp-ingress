@@ -4,8 +4,8 @@ use crate::state::State;
 use access_unit::aac::ensure_adts_header;
 use access_unit::AccessUnit;
 use bytes::{Bytes, BytesMut};
-use chrono::Duration;
 use futures::future::FutureExt;
+use gatekeeper::Gatekeeper;
 use rml_rtmp::chunk_io::Packet;
 use rml_rtmp::handshake::{Handshake, HandshakeProcessResult, PeerType};
 use rml_rtmp::sessions::{
@@ -21,6 +21,11 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{mpsc, oneshot, watch};
 use tracing::{error, info};
 
+const METRICS_INTERVAL: u32 = 400;
+const RTP_NEW: &str = "RTP:NEW";
+const RTP_UP: &str = "RTP:UP ";
+const RTP_DOWN: &str = "RTP:DOWN";
+
 pub struct Connection {
     id: i32,
     session: Option<ServerSession>,
@@ -30,10 +35,19 @@ pub struct Connection {
     sps_pps: Option<Bytes>,
     tx: mpsc::Sender<AccessUnit>,
     tx_shutdown: watch::Sender<()>,
+    gatekeeper: Arc<Gatekeeper>,
+    authed_id: Option<u64>,
+    authed_key: Option<String>,
+    up_counter: u32,
 }
 
 impl Connection {
-    pub fn new(id: i32, tx: mpsc::Sender<AccessUnit>, tx_shutdown: watch::Sender<()>) -> Self {
+    pub fn new(
+        id: i32,
+        tx: mpsc::Sender<AccessUnit>,
+        tx_shutdown: watch::Sender<()>,
+        gatekeeper: Arc<Gatekeeper>,
+    ) -> Self {
         Connection {
             id,
             session: None,
@@ -43,6 +57,10 @@ impl Connection {
             sps_pps: None,
             tx,
             tx_shutdown,
+            gatekeeper,
+            authed_id: None,
+            authed_key: None,
+            up_counter: 0,
         }
     }
 
@@ -52,11 +70,7 @@ impl Connection {
         tx_key: oneshot::Sender<String>,
     ) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         let mut handshake = Handshake::new(PeerType::Server);
-
-        let server_p0_and_1 = handshake
-            .generate_outbound_p0_and_p1()
-            .map_err(|x| format!("Failed to generate p0 and p1: {:?}", x))?;
-
+        let server_p0_and_1 = handshake.generate_outbound_p0_and_p1()?;
         stream.write_all(&server_p0_and_1).await?;
 
         let mut buffer = [0; 4096];
@@ -66,14 +80,10 @@ impl Connection {
                 return Ok(());
             }
 
-            match handshake
-                .process_bytes(&buffer[0..bytes_read])
-                .map_err(|x| format!("Connection {}: Failed to process bytes: {:?}", self.id, x))?
-            {
+            match handshake.process_bytes(&buffer[0..bytes_read])? {
                 HandshakeProcessResult::InProgress { response_bytes } => {
                     stream.write_all(&response_bytes).await?;
                 }
-
                 HandshakeProcessResult::Completed {
                     response_bytes,
                     remaining_bytes,
@@ -104,18 +114,14 @@ impl Connection {
         ));
 
         let config = ServerSessionConfig::new();
-        let (session, mut results) = ServerSession::new(config)
-            .map_err(|x| format!("Server session error occurred: {:?}", x))?;
-
+        let (session, mut results) = ServerSession::new(config)?;
         self.session = Some(session);
 
         let remaining_bytes_results = self
             .session
             .as_mut()
             .unwrap()
-            .handle_input(&received_bytes)
-            .map_err(|x| format!("Failed to handle input: {:?}", x))?;
-
+            .handle_input(&received_bytes)?;
         results.extend(remaining_bytes_results);
 
         let mut key_sender = Some(tx_key);
@@ -146,17 +152,18 @@ impl Connection {
                         Some(bytes) => {
                            results = self.session.as_mut()
                                 .unwrap()
-                                .handle_input(&bytes)
-                                .map_err(|x| format!("Error handling input: {:?}", x))?;
+                                .handle_input(&bytes)?;
                         }
                     }
                 }
             }
         }
 
-        self.tx_shutdown.send(());
-        info!("Connection {}: Client disconnected", self.id);
+        if let (Some(k), Some(id)) = (self.authed_key.as_deref(), self.authed_id) {
+            info!("{} key={} id={}", RTP_DOWN, k, id);
+        }
 
+        let _ = self.tx_shutdown.send(());
         Ok(())
     }
 
@@ -165,12 +172,11 @@ impl Connection {
         results: &mut Vec<ServerSessionResult>,
         byte_writer: &mut UnboundedSender<Packet>,
     ) -> Result<ConnectionAction, Box<dyn std::error::Error + Sync + Send>> {
-        if results.len() == 0 {
+        if results.is_empty() {
             return Ok(ConnectionAction::None);
         }
 
         let mut ret = ConnectionAction::None;
-
         let mut new_results = Vec::new();
         for result in results.drain(..) {
             match result {
@@ -186,23 +192,16 @@ impl Connection {
                     if action == ConnectionAction::Disconnect {
                         return Ok(ConnectionAction::Disconnect);
                     }
-
                     if action == ConnectionAction::New {
                         ret = ConnectionAction::New;
                     }
                 }
 
-                ServerSessionResult::UnhandleableMessageReceived(payload) => {
-                    info!(
-                        "Connection {}: Unhandleable message received: {:?}",
-                        self.id, payload
-                    );
-                }
+                ServerSessionResult::UnhandleableMessageReceived(_) => {}
             }
         }
 
         self.handle_session_results(&mut new_results, byte_writer)?;
-
         Ok(ret)
     }
 
@@ -217,32 +216,7 @@ impl Connection {
                 request_id,
                 app_name,
             } => {
-                info!(
-                    "Connection {}: Client requested connection to app {:?}",
-                    self.id, app_name
-                );
-
-                if self.state != State::Waiting {
-                    error!(
-                        "Connection {}: Client was not in the waiting state, but was in {:?}",
-                        self.id, self.state
-                    );
-                    return Ok(ConnectionAction::Disconnect);
-                }
-
-                new_results.extend(
-                    self.session
-                        .as_mut()
-                        .unwrap()
-                        .accept_request(request_id)
-                        .map_err(|x| {
-                            format!(
-                                "Connection {}: Error occurred accepting request: {:?}",
-                                self.id, x
-                            )
-                        })?,
-                );
-
+                new_results.extend(self.session.as_mut().unwrap().accept_request(request_id)?);
                 self.state = State::Connected { app_name };
             }
 
@@ -252,10 +226,25 @@ impl Connection {
                 mode,
                 stream_key,
             } => {
-                info!(
-                    "Connection {}: Client requesting publishing on {}/{} in mode {:?}",
-                    self.id, app_name, stream_key, mode
-                );
+                let sk = match self.gatekeeper.streamkey(&stream_key) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        if let Ok(results) = self.session.as_mut().unwrap().reject_request(
+                            request_id.clone(),
+                            "NetStream.Publish.Denied",
+                            "Unauthorized or invalid stream key",
+                        ) {
+                            for r in results {
+                                if let ServerSessionResult::OutboundResponse(packet) = r {
+                                    if !send(&byte_writer, packet) {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        return Ok(ConnectionAction::Disconnect);
+                    }
+                };
 
                 self.state = State::PublishRequested {
                     request_id: request_id.clone(),
@@ -268,61 +257,35 @@ impl Connection {
                     stream_key: stream_key.clone(),
                 };
 
-                match self
-                    .session
-                    .as_mut()
-                    .unwrap()
-                    .accept_request(request_id.clone())
-                {
-                    Ok(results) => {
-                        for result in results {
-                            match result {
-                                ServerSessionResult::OutboundResponse(packet) => {
-                                    if !send(&byte_writer, packet) {
-                                        break;
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
+                self.authed_id = Some(sk.id());
+                self.authed_key = Some(sk.key().to_string());
+                info!("{} {} {}", RTP_NEW, sk.key(), sk.id());
 
-                        return Ok(ConnectionAction::None);
+                for r in self.session.as_mut().unwrap().accept_request(request_id)? {
+                    if let ServerSessionResult::OutboundResponse(packet) = r {
+                        if !send(&byte_writer, packet) {
+                            break;
+                        }
                     }
-                    Err(_) => return Ok(ConnectionAction::Disconnect),
                 }
+
+                return Ok(ConnectionAction::None);
             }
 
             ServerSessionEvent::StreamMetadataChanged {
-                stream_key,
+                stream_key: _,
                 app_name: _,
                 metadata,
-            } => {
-                info!(
-                    "Connection {}: New metadata published for stream key '{}': {:?}",
-                    self.id, stream_key, metadata
-                );
-
-                match &self.state {
-                    State::Publishing { .. } => {
-                        self.metadata = Some(metadata);
-                        return Ok(ConnectionAction::New);
-                    }
-
-                    _ => {
-                        error!(
-                            "Connection {}: expected client to be in publishing state, was in {:?}",
-                            self.id, self.state
-                        );
-                        return Ok(ConnectionAction::Disconnect);
-                    }
+            } => match &self.state {
+                State::Publishing { .. } => {
+                    self.metadata = Some(metadata);
+                    return Ok(ConnectionAction::New);
                 }
-            }
+                _ => return Ok(ConnectionAction::Disconnect),
+            },
 
             ServerSessionEvent::VideoDataReceived {
-                app_name: _app,
-                stream_key: _key,
-                timestamp,
-                data,
+                timestamp, data, ..
             } => {
                 let is_key_frame = is_video_keyframe(&data);
                 let sps_pps = self.sps_pps.as_ref();
@@ -333,27 +296,24 @@ impl Connection {
                     if is_avcc {
                         self.sps_pps = Some(au.data.clone());
                     }
-
                     if is_key_frame {
                         au.key = true;
                     }
 
-                    match self.tx.try_send(au) {
-                        Ok(_) => {
-                            return Ok(ConnectionAction::None);
+                    if let (Some(k), Some(id)) = (self.authed_key.as_deref(), self.authed_id) {
+                        self.up_counter = self.up_counter.wrapping_add(1);
+                        if self.up_counter % METRICS_INTERVAL == 0 {
+                            info!("{} key={} id={}", RTP_UP, k, id);
                         }
-                        Err(e) => {
-                            match e {
-                                tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                                    error!("Channel is full");
-                                    // skip this packet
-                                    return Ok(ConnectionAction::None);
-                                }
-                                tokio::sync::mpsc::error::TrySendError::Closed(_) => {
-                                    error!("Failed to send AccessUnit: Receiver has been dropped");
-                                    return Ok(ConnectionAction::Disconnect);
-                                }
-                            }
+                    }
+
+                    match self.tx.try_send(au) {
+                        Ok(_) => return Ok(ConnectionAction::None),
+                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                            return Ok(ConnectionAction::None)
+                        }
+                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                            return Ok(ConnectionAction::Disconnect)
                         }
                     }
                 }
@@ -363,54 +323,43 @@ impl Connection {
                 timestamp, data, ..
             } => {
                 if let Some(m) = &self.metadata {
-                    if let Some(channels) = m.audio_channels {
-                        if let Some(sample_rate) = m.audio_sample_rate {
-                            let data = ensure_adts_header(data, channels as u8, sample_rate);
-                            match self.tx.try_send(AccessUnit {
-                                data,
-                                dts: timestamp.value as u64,
-                                pts: timestamp.value as u64,
-                                key: false,
-                                stream_type: access_unit::PSI_STREAM_AAC,
-                                id: 0,
-                            }) {
-                                Ok(_) => {
-                                    return Ok(ConnectionAction::None);
-                                }
-                                Err(e) => {
-                                    match e {
-                                        tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                                            error!("Channel is full");
-                                            // skip this packet
-                                            return Ok(ConnectionAction::None);
-                                        }
-                                        tokio::sync::mpsc::error::TrySendError::Closed(_) => {
-                                            error!("Failed to send AccessUnit: Receiver has been dropped");
-                                            return Ok(ConnectionAction::Disconnect);
-                                        }
-                                    }
-                                }
+                    if let (Some(channels), Some(sample_rate)) =
+                        (m.audio_channels, m.audio_sample_rate)
+                    {
+                        let data = ensure_adts_header(data, channels as u8, sample_rate);
+
+                        if let (Some(k), Some(id)) = (self.authed_key.as_deref(), self.authed_id) {
+                            self.up_counter = self.up_counter.wrapping_add(1);
+                            if self.up_counter % METRICS_INTERVAL == 0 {
+                                info!("{} key={} id={}", RTP_UP, k, id);
+                            }
+                        }
+
+                        match self.tx.try_send(AccessUnit {
+                            data,
+                            dts: timestamp.value as u64,
+                            pts: timestamp.value as u64,
+                            key: false,
+                            stream_type: access_unit::PSI_STREAM_AAC,
+                            id: 0,
+                        }) {
+                            Ok(_) => return Ok(ConnectionAction::None),
+                            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                return Ok(ConnectionAction::None)
+                            }
+                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                return Ok(ConnectionAction::Disconnect)
                             }
                         }
                     }
                 }
             }
 
-            ServerSessionEvent::PublishStreamFinished { .. } => match &self.state {
-                State::Publishing { .. } => {
-                    return Ok(ConnectionAction::Disconnect);
-                }
+            ServerSessionEvent::PublishStreamFinished { .. } => {
+                return Ok(ConnectionAction::Disconnect);
+            }
 
-                _ => {
-                    error!(
-                        "Connection {}: Expected client to be in publishing state, was in {:?}",
-                        self.id, self.state
-                    );
-                    return Ok(ConnectionAction::Disconnect);
-                }
-            },
-
-            x => info!("Connection {}: Unknown event raised: {:?}", self.id, x),
+            _ => {}
         }
 
         Ok(ConnectionAction::None)
@@ -453,16 +402,11 @@ async fn connection_writer(
     loop {
         let packet = packets_to_send.recv().await;
         if packet.is_none() {
-            break; // connection closed
+            break;
         }
 
         let packet = packet.unwrap();
 
-        // Since RTMP is TCP based, if bandwidth is low between the server and the client then
-        // we will end up backlogging the mpsc receiver.  However, mpsc does not have a good
-        // way to know how many items are pending.  So we need to receive all pending packets
-        // in a non-blocking manner, put them in a queue, and if the queue is too large ignore
-        // optional packets.
         send_queue.push_back(packet);
         while let Some(Some(packet)) = packets_to_send.recv().now_or_never() {
             send_queue.push_back(packet);
@@ -470,10 +414,6 @@ async fn connection_writer(
 
         let mut send_optional_packets = true;
         if send_queue.len() > BACKLOG_THRESHOLD {
-            info!(
-                "Connection {}: Too many pending packets, dropping optional ones",
-                connection_id
-            );
             send_optional_packets = false;
         }
 
@@ -489,8 +429,7 @@ async fn connection_writer(
 }
 
 fn is_video_keyframe(data: &Bytes) -> bool {
-    // assumings h264
-    return data.len() >= 2 && data[0] == 0x17 && data[1] != 0x00; // 0x00 is the sequence header, don't count that for now
+    data.len() >= 2 && data[0] == 0x17 && data[1] != 0x00
 }
 
 fn spawn<F, E>(future: F)
@@ -505,8 +444,6 @@ where
     });
 }
 
-/// Sends a message over an unbounded receiver and returns true if the message was sent
-/// or false if the channel has been closed.
 fn send<T>(sender: &UnboundedSender<T>, message: T) -> bool {
     match sender.send(message) {
         Ok(_) => true,

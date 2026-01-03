@@ -1,38 +1,31 @@
 use crate::listener::Connection;
-use xmpegts::define::epsi_stream_type;
-use xmpegts::ts::TsMuxer;
-use access_unit::{AccessUnit, detect_audio, AudioType};
-use bytes::{Bytes, BytesMut};
-use futures::SinkExt;
-use srt_tokio::{options::*, SrtSocket};
+use access_unit::AccessUnit;
+use gatekeeper::{Gatekeeper, Streamkey};
 use std::error::Error;
-use std::io;
 use std::net::SocketAddr;
-use std::time::Instant;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot, watch};
-use tokio_stream::wrappers::ReceiverStream;
-use tokio_stream::StreamExt;
 use tracing::{debug, error, info};
 
-const RTP_NEW: &str = "SRT:NEW";
-const RTP_UP: &str = "SRT:UP";
-const RTP_DOWN: &str = "SRT:DOWN";
-
 pub async fn start_rtmp_listener(
+    base64_encoded_pem_key: String,
     rtp_addr: SocketAddr,
-    srt_addr: SocketAddr,
 ) -> Result<
     (
         oneshot::Receiver<()>,
         oneshot::Receiver<()>,
         watch::Sender<()>,
+        mpsc::Receiver<(String, AccessUnit)>,
     ),
     Box<dyn Error + Send + Sync>,
 > {
     let (shutdown_tx, mut shutdown_rx) = watch::channel(());
     let (up_tx, up_rx) = oneshot::channel();
     let (fin_tx, fin_rx) = oneshot::channel();
+    let (out_tx, out_rx) = mpsc::channel::<(String, AccessUnit)>(1024);
+
+    let gatekeeper = Arc::new(Gatekeeper::new(&base64_encoded_pem_key)?);
 
     let listener = TcpListener::bind(rtp_addr).await?;
     let srv = async move {
@@ -51,14 +44,19 @@ pub async fn start_rtmp_listener(
                     };
 
                     current_id = current_id.wrapping_add(1);
+                    let out_tx = out_tx.clone();
+
+                    let gatekeeper = gatekeeper.clone();
                     tokio::spawn(async move {
-                        let (tx, rx) = mpsc::channel::<AccessUnit>(16);
-                        let (ts_tx, ts_rx) = mpsc::channel::<bytes::Bytes>(16);
+                        let (tx, mut rx) = mpsc::channel::<AccessUnit>(16);
                         let (close_tx, _close_rx) = watch::channel(());
                         let (tx_key, rx_key) = oneshot::channel::<String>();
-                        let connection = Connection::new(current_id.try_into().unwrap(), tx, close_tx);
 
-                        info!("Connection {}: Connection received from {}", current_id, addr.ip());
+                        let gatekeeper_inner = gatekeeper.clone();
+
+                        let connection = Connection::new(current_id.try_into().unwrap(), tx, close_tx, gatekeeper_inner);
+
+                        info!("connection {}: eonnection received from {}", current_id, addr.ip());
 
                         if let Err(e) = connection.start_handshake(tcp, tx_key).await {
                             error!(error=%e, "Handshake failed");
@@ -66,31 +64,16 @@ pub async fn start_rtmp_listener(
                         }
 
                         tokio::spawn(async move {
-                            mux_stream_with_ts_muxer(rx, ts_tx).await;
-                        });
-
-                        match rx_key.await {
-                            Ok(stream_key) => {
-                                match SrtSocket::builder().call(srt_addr, Some(&stream_key)).await {
-                                    Ok(mut socket) => {
-                                        let mut stream = ReceiverStream::new(ts_rx)
-                                            .map(|bytes| {
-                                                Ok((Instant::now(), bytes)) as Result<(Instant, Bytes), io::Error>
-                                            });
-
-                                        if let Err(e) = socket.send_all(&mut stream).await {
-                                            error!(error=%e, "SRT send_all failed");
-                                        }
-                                    }
-                                    Err(e) => {
-                                        error!(error=%e, "Failed to open SRT socket");
-                                    }
+                            let key = match rx_key.await {
+                                Ok(k) => k,
+                                Err(_) => return,
+                            };
+                            while let Some(au) = rx.recv().await {
+                                if out_tx.send((key.clone(), au)).await.is_err() {
+                                    break;
                                 }
                             }
-                            Err(e) => {
-                                error!(error=%e, "Stream key handshake channel closed");
-                            }
-                        }
+                        });
                     });
                 }
                 _ = shutdown_rx.changed() => {
@@ -104,62 +87,5 @@ pub async fn start_rtmp_listener(
 
     tokio::spawn(srv);
 
-    Ok((up_rx, fin_rx, shutdown_tx))
+    Ok((up_rx, fin_rx, shutdown_tx, out_rx))
 }
-
-async fn mux_stream_with_ts_muxer(mut rx: mpsc::Receiver<AccessUnit>, ts_tx: mpsc::Sender<Bytes>) {
-    let mut muxer = TsMuxer::new();
-    let video_pid = match muxer.add_stream(epsi_stream_type::PSI_STREAM_H264, BytesMut::new()) {
-        Ok(pid) => pid,
-        Err(e) => {
-            error!(error=%e, "Failed to add H264 stream");
-            return;
-        }
-    };
-    let audio_pid = match muxer.add_stream(epsi_stream_type::PSI_STREAM_AAC, BytesMut::new()) {
-        Ok(pid) => pid,
-        Err(e) => {
-            error!(error=%e, "Failed to add AAC stream");
-            return;
-        }
-    };
-
-    while let Some(au) = rx.recv().await {
-        let pts: i64 = match au.pts.try_into() {
-            Ok(v) => v,
-            Err(e) => {
-                error!(error=%e, "Invalid PTS");
-                continue;
-            }
-        };
-        let dts: i64 = match au.dts.try_into() {
-            Ok(v) => v,
-            Err(e) => {
-                error!(error=%e, "Invalid DTS");
-                continue;
-            }
-        };
-
-        let payload = BytesMut::from(au.data.clone());
-        let pid = match detect_audio(&au.data) {
-            AudioType::AAC => audio_pid,
-            AudioType::FLAC => audio_pid,
-            _ => video_pid,
-        };
-
-        if let Err(e) = muxer.write(pid, pts, dts, 0, payload) {
-            error!(error=%e, "TsMuxer write failed");
-            continue;
-        }
-
-        let encoded = muxer.get_data();
-        for chunk in encoded.chunks(188 * 6) {
-            let out = Bytes::copy_from_slice(chunk);
-            if let Err(e) = ts_tx.send(out).await {
-                debug!(error=%e, "TS out channel closed");
-                return;
-            }
-        }
-    }
-}
-
