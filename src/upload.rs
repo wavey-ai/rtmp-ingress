@@ -9,10 +9,18 @@ use http_pack::stream::{StreamHeaders, StreamRequestHeaders};
 use http_pack::{HeaderField, HttpVersion};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tracing::{debug, error, info};
 use upload_response::UploadResponseService;
+
+#[cfg(feature = "tls")]
+use std::io::BufReader;
+#[cfg(feature = "tls")]
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+#[cfg(feature = "tls")]
+use tokio_rustls::TlsAcceptor;
 
 /// Auth callback for RTMP connections
 pub trait RtmpAuth: Send + Sync + 'static {
@@ -93,7 +101,7 @@ impl<A: RtmpAuth> RtmpUploadIngest<A> {
         }
     }
 
-    /// Start the RTMP listener on the given address
+    /// Start the RTMP listener on the given address (plain TCP)
     pub async fn start(
         self,
         addr: SocketAddr,
@@ -134,6 +142,75 @@ impl<A: RtmpAuth> RtmpUploadIngest<A> {
 
         Ok(shutdown_tx)
     }
+
+    /// Start the RTMPS (TLS) listener on the given address
+    #[cfg(feature = "tls")]
+    pub async fn start_tls(
+        self,
+        addr: SocketAddr,
+        cert_pem: &[u8],
+        key_pem: &[u8],
+    ) -> Result<watch::Sender<()>, Box<dyn std::error::Error + Send + Sync>> {
+        let (shutdown_tx, mut shutdown_rx) = watch::channel(());
+        let service = self.service;
+        let auth = self.auth;
+
+        // Parse certs and key
+        let certs: Vec<CertificateDer<'static>> =
+            rustls_pemfile::certs(&mut BufReader::new(cert_pem))
+                .filter_map(|r| r.ok())
+                .collect();
+
+        let key: PrivateKeyDer<'static> =
+            rustls_pemfile::private_key(&mut BufReader::new(key_pem))?
+                .ok_or("no private key found")?;
+
+        let config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)?;
+
+        let acceptor = TlsAcceptor::from(Arc::new(config));
+
+        let listener = TcpListener::bind(addr).await?;
+        info!("RTMPS (TLS) upload-response server listening on {}", addr);
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = shutdown_rx.changed() => {
+                        info!("RTMPS upload-response server shutting down");
+                        break;
+                    }
+                    accept_result = listener.accept() => {
+                        match accept_result {
+                            Ok((tcp_stream, peer_addr)) => {
+                                let service = Arc::clone(&service);
+                                let auth = Arc::clone(&auth);
+                                let acceptor = acceptor.clone();
+                                tokio::spawn(async move {
+                                    match acceptor.accept(tcp_stream).await {
+                                        Ok(tls_stream) => {
+                                            if let Err(e) = handle_connection(tls_stream, peer_addr, service, auth).await {
+                                                error!("RTMPS connection error: {}", e);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("TLS handshake error: {}", e);
+                                        }
+                                    }
+                                });
+                            }
+                            Err(e) => {
+                                error!("RTMPS accept error: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(shutdown_tx)
+    }
 }
 
 use crate::flv;
@@ -143,17 +220,20 @@ use rml_rtmp::sessions::{
     ServerSession, ServerSessionConfig, ServerSessionEvent, ServerSessionResult, StreamMetadata,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 use tokio::time::{timeout, Duration};
 
 const READ_TIMEOUT_SECS: u64 = 30;
 
-async fn handle_connection<A: RtmpAuth>(
-    mut stream: TcpStream,
+async fn handle_connection<S, A>(
+    mut stream: S,
     peer_addr: SocketAddr,
     service: Arc<UploadResponseService>,
     auth: Arc<A>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+    A: RtmpAuth,
+{
     // Acquire stream slot
     let _permit = service
         .acquire_stream()

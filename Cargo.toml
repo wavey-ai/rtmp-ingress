@@ -6,12 +6,13 @@ edition = "2021"
 [features]
 default = []
 upload-response = ["dep:upload-response", "dep:http-pack"]
+tls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
 
 [dependencies]
 tokio = { version = "1.35.1", features = ["full"] }
 bytes = "1"
 chrono = "0.4.38"
-rml_rtmp = { git = "ssh://git@github.com/wavey-ai/rust-media-libs.git" }
+rml_rtmp = { git = "https://github.com/wavey-ai/rust-media-libs.git" }
 tracing = "0.1.40"
 futures = "0.3.30"
 xmpegts = { git = "ssh://git@github.com/wavey-ai/xiu" }
@@ -24,3 +25,8 @@ gatekeeper = { git = "ssh://git@github.com/wavey-ai/gatekeeper.git" }
 # Optional deps for upload-response integration
 upload-response = { path = "../web-services/upload-response", optional = true }
 http-pack = { path = "../http-pack", optional = true }
+
+# Optional TLS deps
+tokio-rustls = { version = "0.26", optional = true }
+rustls = { version = "0.23", optional = true }
+rustls-pemfile = { version = "2", optional = true }
