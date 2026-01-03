@@ -56,4 +56,6 @@ The original work is dual-licensed under MIT and Apache-2.0.
 
 ## License
 
-See the LICENSE file for details.
+MIT License - see [LICENSE](LICENSE) for details.
+
+This license is compatible with the upstream rust-media-libs MIT/Apache-2.0 dual license.
