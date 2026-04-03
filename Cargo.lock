@@ -4,9 +4,9 @@ version = 4
 
 [[package]]
 name = "access-unit"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0215e41d6f07cabff62f495445aca5a6d50d497989b7b2718563750b319103ef"
+checksum = "089654a0182818690a0efe33f1c8fde8d0cee83a1dd043b6d358525857d1b169"
 dependencies = [
  "bytes",
 ]
@@ -216,29 +216,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
-name = "bindgen"
-version = "0.69.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "271383c67ccabffb7381723dea0672a673f292304fcb45c01cc648c7a8d58088"
-dependencies = [
- "bitflags 2.9.3",
- "cexpr",
- "clang-sys",
- "itertools",
- "lazy_static",
- "lazycell",
- "log",
- "prettyplease",
- "proc-macro2",
- "quote",
- "regex",
- "rustc-hash 1.1.0",
- "shlex",
- "syn 2.0.106",
- "which",
-]
-
-[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -280,24 +257,7 @@ checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 [[package]]
 name = "bytesio"
 version = "0.3.3"
-source = "git+ssh://git@github.com/wavey-ai/xiu#bb094ea076ae758d7b62642ab403fd2e94db027b"
-dependencies = [
- "async-trait",
- "byteorder",
- "bytes",
- "failure",
- "futures",
- "log",
- "rand 0.3.23",
- "tokio",
- "tokio-stream",
- "tokio-util 0.6.10",
-]
-
-[[package]]
-name = "bytesio"
-version = "0.3.3"
-source = "git+https://github.com/wavey-ai/xiu#bb094ea076ae758d7b62642ab403fd2e94db027b"
+source = "git+https://github.com/wavey-ai/xiu.git#bb094ea076ae758d7b62642ab403fd2e94db027b"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -320,15 +280,6 @@ dependencies = [
  "jobserver",
  "libc",
  "shlex",
-]
-
-[[package]]
-name = "cexpr"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766"
-dependencies = [
- "nom",
 ]
 
 [[package]]
@@ -365,17 +316,6 @@ checksum = "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad"
 dependencies = [
  "crypto-common",
  "inout",
-]
-
-[[package]]
-name = "clang-sys"
-version = "1.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b023947811758c97c59bf9d1c188fd619ad4718dcaa767947df1cadb14f39f4"
-dependencies = [
- "glob",
- "libc",
- "libloading",
 ]
 
 [[package]]
@@ -527,12 +467,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
-name = "either"
-version = "1.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
-
-[[package]]
 name = "env_filter"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -560,16 +494,6 @@ name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
-
-[[package]]
-name = "errno"
-version = "0.3.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "778e2ac28f6c47af28e4907f13ffd1e1ddbd400980a9abd7c8df189bf578a5ad"
-dependencies = [
- "libc",
- "windows-sys 0.59.0",
-]
 
 [[package]]
 name = "failure"
@@ -728,7 +652,7 @@ dependencies = [
 [[package]]
 name = "gatekeeper"
 version = "0.1.0"
-source = "git+ssh://git@github.com/wavey-ai/gatekeeper.git#d901af098990bd27620782adf4c11702b0660caf"
+source = "git+https://github.com/wavey-ai/gatekeeper.git#d901af098990bd27620782adf4c11702b0660caf"
 dependencies = [
  "base64",
  "bytes",
@@ -817,12 +741,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07e28edb80900c19c28f1072f2e8aeca7fa06b23cd4169cefe1af5aa3260783f"
 
 [[package]]
-name = "glob"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
-
-[[package]]
 name = "h2"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -856,26 +774,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "h3"
-version = "0.0.8"
-source = "git+https://github.com/hyperium/h3.git#e75b509f921db4850ff0d6027b79a5890664d63d"
-dependencies = [
- "bytes",
- "fastrand",
- "futures-util",
- "http",
- "pin-project-lite",
- "tokio",
-]
-
-[[package]]
 name = "h3-datagram"
 version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d2c9f77921668673721ae40f17c729fc48b9e38a663858097cea547484fdf0f"
 dependencies = [
  "bytes",
- "h3 0.0.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "h3",
  "pin-project-lite",
 ]
 
@@ -887,7 +792,7 @@ checksum = "8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4"
 dependencies = [
  "bytes",
  "futures",
- "h3 0.0.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "h3",
  "h3-datagram",
  "quinn",
  "tokio",
@@ -902,7 +807,7 @@ checksum = "2d91a50fd582a5d67b1f756fba3cd9c66367ff4f23e1017c882f664d63b350a7"
 dependencies = [
  "bytes",
  "futures-util",
- "h3 0.0.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "h3",
  "h3-datagram",
  "http",
  "pin-project-lite",
@@ -960,15 +865,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "home"
-version = "0.5.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "589533453244b0995c858700322199b2becb13b627df2851f64a2775d024abcf"
-dependencies = [
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "http"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1004,9 +900,10 @@ dependencies = [
 [[package]]
 name = "http-pack"
 version = "0.1.0"
+source = "git+https://github.com/wavey-ai/http-pack.git#4381ecaeb649dd9b34698fe9350fee4deb744a6b"
 dependencies = [
  "bytes",
- "h3 0.0.8 (git+https://github.com/hyperium/h3.git)",
+ "h3",
  "http",
  "http-body",
  "http-body-util",
@@ -1268,15 +1165,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
-name = "itertools"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1342,32 +1230,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
-name = "lazycell"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
-
-[[package]]
 name = "libc"
 version = "0.2.175"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a82ae493e598baaea5209805c49bbf2ea7de956d50d7da0da1164f9c6d28543"
-
-[[package]]
-name = "libloading"
-version = "0.8.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
-dependencies = [
- "cfg-if",
- "windows-targets",
-]
-
-[[package]]
-name = "linux-raw-sys"
-version = "0.4.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
 
 [[package]]
 name = "litemap"
@@ -1415,6 +1281,8 @@ checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
 [[package]]
 name = "message-packetizer"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9be79722528933c355e5eabe3d7ff8a08a1a0f7da00463cbba05e6bdd632647"
 dependencies = [
  "base64",
  "bytes",
@@ -1436,12 +1304,6 @@ name = "minicbor"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0452a60c1863c1f50b5f77cd295e8d2786849f35883f0b9e18e7e6e1b5691b0"
-
-[[package]]
-name = "minimal-lexical"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
@@ -1477,22 +1339,12 @@ dependencies = [
 [[package]]
 name = "mse_fmp4"
 version = "0.2.0"
-source = "git+ssh://git@github.com/wavey-ai/mse_fmp4.git#2227e1ff102f4372395c671dc46750774dd6c360"
+source = "git+https://github.com/wavey-ai/mse_fmp4.git#2227e1ff102f4372395c671dc46750774dd6c360"
 dependencies = [
  "byteorder",
  "bytes",
  "mpeg2ts",
  "trackable 0.2.24",
-]
-
-[[package]]
-name = "nom"
-version = "7.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
-dependencies = [
- "memchr",
- "minimal-lexical",
 ]
 
 [[package]]
@@ -1502,17 +1354,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4a28e057d01f97e61255210fcff094d74ed0466038633e95017f5beb68e4399"
 dependencies = [
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "num-derive"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed3955f1a9c7c0c15e092f9c887db08b1fc683305fdf6eb6684f22555355e202"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.106",
 ]
 
 [[package]]
@@ -1597,14 +1438,15 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "playlists"
-version = "0.1.0"
+version = "0.1.3"
+source = "git+https://github.com/wavey-ai/playlists.git#a069d9ec7bd97f1b96a6b435541be8304fc680a4"
 dependencies = [
  "access-unit",
  "bytes",
  "chrono",
  "flate2",
  "thiserror 1.0.69",
- "tls-helpers 0.1.6",
+ "tls-helpers 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio",
  "tracing",
  "xxhash-rust",
@@ -1655,16 +1497,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prettyplease"
-version = "0.2.37"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
-dependencies = [
- "proc-macro2",
- "syn 2.0.106",
-]
-
-[[package]]
 name = "proc-macro-error"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1709,7 +1541,7 @@ dependencies = [
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",
- "rustc-hash 2.1.1",
+ "rustc-hash",
  "rustls 0.23.35",
  "socket2 0.6.0",
  "thiserror 2.0.17",
@@ -1729,7 +1561,7 @@ dependencies = [
  "lru-slab",
  "rand 0.9.2",
  "ring",
- "rustc-hash 2.1.1",
+ "rustc-hash",
  "rustls 0.23.35",
  "rustls-pki-types",
  "slab",
@@ -1929,7 +1761,7 @@ dependencies = [
 [[package]]
 name = "rml_amf0"
 version = "0.3.0"
-source = "git+ssh://git@github.com/wavey-ai/rust-media-libs.git#02522b540693a2e2b02eb2d730ed70fd78ebcf36"
+source = "git+https://github.com/wavey-ai/rust-media-libs.git#02522b540693a2e2b02eb2d730ed70fd78ebcf36"
 dependencies = [
  "byteorder",
  "thiserror 1.0.69",
@@ -1938,7 +1770,7 @@ dependencies = [
 [[package]]
 name = "rml_rtmp"
 version = "0.8.0"
-source = "git+ssh://git@github.com/wavey-ai/rust-media-libs.git#02522b540693a2e2b02eb2d730ed70fd78ebcf36"
+source = "git+https://github.com/wavey-ai/rust-media-libs.git#02522b540693a2e2b02eb2d730ed70fd78ebcf36"
 dependencies = [
  "byteorder",
  "bytes",
@@ -1962,12 +1794,15 @@ dependencies = [
  "http-pack",
  "mse_fmp4",
  "rml_rtmp",
+ "rustls 0.23.35",
+ "rustls-pemfile",
  "srt-tokio",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
  "tracing",
  "upload-response",
- "xmpegts 0.2.0 (git+ssh://git@github.com/wavey-ai/xiu)",
+ "xmpegts",
 ]
 
 [[package]]
@@ -1975,12 +1810,6 @@ name = "rustc-demangle"
 version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56f7d92ca342cea22a06f2121d944b4fd82af56988c270852495420f961d4ace"
-
-[[package]]
-name = "rustc-hash"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "rustc-hash"
@@ -1995,19 +1824,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
 dependencies = [
  "semver",
-]
-
-[[package]]
-name = "rustix"
-version = "0.38.44"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdb5bc1ae2baa591800df16c9ca78619bf65c0488b41b96ccec5d11220d8c154"
-dependencies = [
- "bitflags 2.9.3",
- "errno",
- "libc",
- "linux-raw-sys",
- "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2241,20 +2057,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "srt"
-version = "0.1.0"
-source = "git+https://github.com/wavey-ai/av-rs.git#5ac4c2ce4949a0194621ff46d72066909e2b9b5d"
-dependencies = [
- "lazy_static",
- "libc",
- "log",
- "num-derive",
- "num-traits",
- "srt-sys",
- "tokio",
-]
-
-[[package]]
 name = "srt-protocol"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2280,16 +2082,6 @@ dependencies = [
  "take-until",
  "thiserror 1.0.69",
  "url",
-]
-
-[[package]]
-name = "srt-sys"
-version = "0.1.0"
-source = "git+https://github.com/wavey-ai/av-rs.git#5ac4c2ce4949a0194621ff46d72066909e2b9b5d"
-dependencies = [
- "bindgen",
- "cmake",
- "libc",
 ]
 
 [[package]]
@@ -2522,6 +2314,20 @@ checksum = "c523932f6f4ff0ca9ed0487e0eb9cc06818e5d85a3071fa7457d87f20800e485"
 dependencies = [
  "base64",
  "rustls 0.21.12",
+ "rustls-pemfile",
+ "rustls-pki-types",
+ "tokio",
+ "tokio-rustls",
+]
+
+[[package]]
+name = "tls-helpers"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83865f41768d6c4608fd739e8984e334a3a59f074fcb348ef0be7e5048dc9c9c"
+dependencies = [
+ "base64",
+ "rustls 0.23.35",
  "rustls-pemfile",
  "rustls-pki-types",
  "tokio",
@@ -2816,6 +2622,7 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 [[package]]
 name = "upload-response"
 version = "0.1.0"
+source = "git+https://github.com/wavey-ai/web-services.git#11c3c056466a714f4bbef00adc6304f01d7deef1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2825,8 +2632,10 @@ dependencies = [
  "hyper",
  "hyper-util",
  "playlists",
- "srt",
+ "rustls 0.23.35",
+ "rustls-pemfile",
  "tokio",
+ "tokio-rustls",
  "tokio-tungstenite",
  "tracing",
  "web-service",
@@ -2965,6 +2774,7 @@ dependencies = [
 [[package]]
 name = "web-service"
 version = "0.1.0"
+source = "git+https://github.com/wavey-ai/web-services.git#11c3c056466a714f4bbef00adc6304f01d7deef1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2975,7 +2785,7 @@ dependencies = [
  "futures-util",
  "gen-id 0.3.0 (git+https://github.com/wavey-ai/gen-id.git)",
  "h2",
- "h3 0.0.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "h3",
  "h3-datagram",
  "h3-quinn",
  "h3-webtransport",
@@ -2994,14 +2804,14 @@ dependencies = [
  "serde_json",
  "structopt",
  "thiserror 2.0.17",
- "tls-helpers 0.2.0",
+ "tls-helpers 0.2.0 (git+https://github.com/wavey-ai/tls-helpers.git)",
  "tokio",
  "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
  "url",
  "webpki-roots 0.26.11",
- "xmpegts 0.2.0 (git+https://github.com/wavey-ai/xiu)",
+ "xmpegts",
  "xxhash-rust",
 ]
 
@@ -3031,18 +2841,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12bed680863276c63889429bfd6cab3b99943659923822de1c8a39c49e4d722c"
 dependencies = [
  "rustls-pki-types",
-]
-
-[[package]]
-name = "which"
-version = "4.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87ba24419a2078cd2b0f2ede2691b6c66d8e47836da3b6db8265ebad47afbfc7"
-dependencies = [
- "either",
- "home",
- "once_cell",
- "rustix",
 ]
 
 [[package]]
@@ -3267,22 +3065,11 @@ checksum = "ea2f10b9bb0928dfb1b42b65e1f9e36f7f54dbdf08457afefb38afcdec4fa2bb"
 [[package]]
 name = "xmpegts"
 version = "0.2.0"
-source = "git+ssh://git@github.com/wavey-ai/xiu#bb094ea076ae758d7b62642ab403fd2e94db027b"
+source = "git+https://github.com/wavey-ai/xiu.git#bb094ea076ae758d7b62642ab403fd2e94db027b"
 dependencies = [
  "byteorder",
  "bytes",
- "bytesio 0.3.3 (git+ssh://git@github.com/wavey-ai/xiu)",
- "failure",
-]
-
-[[package]]
-name = "xmpegts"
-version = "0.2.0"
-source = "git+https://github.com/wavey-ai/xiu#bb094ea076ae758d7b62642ab403fd2e94db027b"
-dependencies = [
- "byteorder",
- "bytes",
- "bytesio 0.3.3 (git+https://github.com/wavey-ai/xiu)",
+ "bytesio",
  "failure",
 ]
 
