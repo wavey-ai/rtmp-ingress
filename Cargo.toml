@@ -16,16 +16,16 @@ chrono = "0.4.38"
 rml_rtmp = { git = "https://github.com/wavey-ai/rust-media-libs.git" }
 tracing = "0.1.40"
 futures = "0.3.30"
-xmpegts = { git = "ssh://git@github.com/wavey-ai/xiu" }
-mse_fmp4 = { git = "ssh://git@github.com/wavey-ai/mse_fmp4.git" }
+xmpegts = { git = "https://github.com/wavey-ai/xiu.git" }
+mse_fmp4 = { git = "https://github.com/wavey-ai/mse_fmp4.git" }
 srt-tokio = "0.4.4"
 tokio-stream = "0.1.15"
-access-unit = "0.1.1"
-gatekeeper = { git = "ssh://git@github.com/wavey-ai/gatekeeper.git" }
+access-unit = "0.1.2"
+gatekeeper = { git = "https://github.com/wavey-ai/gatekeeper.git" }
 
 # Optional deps for upload-response integration
-upload-response = { path = "../web-services/upload-response", optional = true }
-http-pack = { path = "../http-pack", optional = true }
+upload-response = { git = "https://github.com/wavey-ai/web-services.git", package = "upload-response", optional = true }
+http-pack = { git = "https://github.com/wavey-ai/http-pack.git", optional = true }
 
 # Optional TLS deps
 tokio-rustls = { version = "0.26", optional = true }
