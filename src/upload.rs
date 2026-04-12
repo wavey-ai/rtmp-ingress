@@ -234,13 +234,12 @@ where
     S: AsyncRead + AsyncWrite + Unpin,
     A: RtmpAuth,
 {
-    // Acquire stream slot
-    let _permit = service
-        .acquire_stream()
+    let upload_stream = service
+        .open_stream()
         .await
-        .map_err(|e| format!("Failed to acquire stream: {}", e))?;
-
-    let stream_id = service.next_id();
+        .map_err(|e| format!("Failed to open stream: {}", e))?;
+    let stream_id = upload_stream.stream_id();
+    let rx = service.register_response(stream_id).await;
 
     debug!(
         stream_id,
@@ -518,13 +517,17 @@ where
             au_count, "RTMP request complete, waiting for response"
         );
 
-        // Wait for response
-        let rx = service.register_response(stream_id).await;
         let timeout_duration = Duration::from_millis(service.config().response_timeout_ms);
 
         match timeout(timeout_duration, rx).await {
-            Ok(Ok(Ok((status, body)))) => {
-                debug!(stream_id, ?status, len = body.len(), "Got RTMP response");
+            Ok(Ok(Ok(cached))) => {
+                debug!(
+                    stream_id,
+                    status = ?cached.status,
+                    len = cached.body.len(),
+                    headers = cached.headers.len(),
+                    "Got RTMP response"
+                );
             }
             Ok(Ok(Err(e))) => {
                 error!(stream_id, error = %e, "Response error");
@@ -541,5 +544,6 @@ where
         }
     }
 
+    upload_stream.close().await;
     Ok(())
 }
