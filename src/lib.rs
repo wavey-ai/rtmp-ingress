@@ -1,5 +1,4 @@
 mod connection_action;
-mod flv;
 pub mod ingress;
 mod listener;
 mod state;
@@ -7,6 +6,24 @@ mod state;
 #[cfg(feature = "upload-response")]
 pub mod upload;
 
+use access_unit::AccessUnit;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RtmpStreamInfo {
+    pub key: String,
+    pub id: u64,
+}
+
+#[derive(Debug, Clone)]
+pub enum RtmpIngestEvent {
+    AccessUnit {
+        stream: RtmpStreamInfo,
+        access_unit: AccessUnit,
+    },
+    End {
+        stream: RtmpStreamInfo,
+    },
+}
+
 pub const PSI_STREAM_H264: u8 = 0x1b;
 pub const PSI_STREAM_AAC: u8 = 0x0f;
-

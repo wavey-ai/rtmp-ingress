@@ -16,9 +16,9 @@ use tracing::{debug, error, info};
 use upload_response::UploadResponseService;
 
 #[cfg(feature = "tls")]
-use std::io::BufReader;
-#[cfg(feature = "tls")]
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+#[cfg(feature = "tls")]
+use std::io::BufReader;
 #[cfg(feature = "tls")]
 use tokio_rustls::TlsAcceptor;
 
@@ -213,8 +213,7 @@ impl<A: RtmpAuth> RtmpUploadIngest<A> {
     }
 }
 
-use crate::flv;
-use access_unit::aac::ensure_adts_header;
+use boxer::rtmp::{extract_aac_access_unit, extract_video_access_unit};
 use rml_rtmp::handshake::{Handshake, HandshakeProcessResult, PeerType};
 use rml_rtmp::sessions::{
     ServerSession, ServerSessionConfig, ServerSessionEvent, ServerSessionResult, StreamMetadata,
@@ -379,28 +378,24 @@ where
                         ServerSessionEvent::StreamMetadataChanged { metadata: meta, .. } => {
                             metadata = Some(meta);
                         }
-                        ServerSessionEvent::VideoDataReceived { data, timestamp, .. } => {
+                        ServerSessionEvent::VideoDataReceived {
+                            data, timestamp, ..
+                        } => {
                             if publishing && headers_written {
-                                let is_keyframe =
-                                    data.len() >= 2 && data[0] == 0x17 && data[1] != 0x00;
-
-                                // Extract AU and process synchronously to avoid Send issues
-                                let au_result: Option<(AccessUnit, bool)> = flv::extract_au(
+                                let video = extract_video_access_unit(
                                     data,
-                                    timestamp.value as i64,
+                                    timestamp.value as u64,
                                     sps_pps.as_ref(),
-                                )
-                                .ok();
+                                );
 
-                                if let Some((mut au, is_avcc)) = au_result {
-                                    if is_avcc {
-                                        sps_pps = Some(au.data.clone());
+                                if let Some(mut video) = video {
+                                    if video.is_sequence_header {
+                                        sps_pps = Some(video.access_unit.data.clone());
                                     } else {
-                                        au.key = is_keyframe;
-                                        au.id = au_count;
+                                        video.access_unit.id = au_count;
                                         au_count += 1;
 
-                                        let serialized = serialize_access_unit(&au);
+                                        let serialized = serialize_access_unit(&video.access_unit);
                                         pending.extend_from_slice(&serialized);
                                     }
                                 }
@@ -415,34 +410,22 @@ where
                                 }
                             }
                         }
-                        ServerSessionEvent::AudioDataReceived { data, timestamp, .. } => {
+                        ServerSessionEvent::AudioDataReceived {
+                            data, timestamp, ..
+                        } => {
                             if publishing && headers_written {
                                 if let Some(ref meta) = metadata {
                                     if let (Some(channels), Some(sample_rate)) =
                                         (meta.audio_channels, meta.audio_sample_rate)
                                     {
-                                        // Skip AAC sequence header (packet type 0)
-                                        if data.len() >= 2 && data[1] == 0 {
+                                        let Some(au) = extract_aac_access_unit(
+                                            data,
+                                            timestamp.value as u64,
+                                            channels as u8,
+                                            sample_rate as u32,
+                                            au_count,
+                                        ) else {
                                             continue;
-                                        }
-
-                                        let aac_data = if data.len() > 2 {
-                                            ensure_adts_header(
-                                                data.slice(2..),
-                                                channels as u8,
-                                                sample_rate as u32,
-                                            )
-                                        } else {
-                                            continue;
-                                        };
-
-                                        let au = AccessUnit {
-                                            stream_type: access_unit::PSI_STREAM_AAC,
-                                            key: false,
-                                            id: au_count,
-                                            dts: timestamp.value as u64,
-                                            pts: timestamp.value as u64,
-                                            data: aac_data,
                                         };
                                         au_count += 1;
 
@@ -456,7 +439,9 @@ where
                                             service
                                                 .append_request_body(stream_id, Bytes::from(chunk))
                                                 .await
-                                                .map_err(|e| format!("Failed to write body: {}", e))?;
+                                                .map_err(|e| {
+                                                    format!("Failed to write body: {}", e)
+                                                })?;
                                         }
                                     }
                                 }

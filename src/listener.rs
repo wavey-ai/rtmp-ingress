@@ -1,8 +1,8 @@
 use crate::connection_action::ConnectionAction;
-use crate::flv;
 use crate::state::State;
-use access_unit::aac::ensure_adts_header;
+use crate::RtmpStreamInfo;
 use access_unit::AccessUnit;
+use boxer::rtmp::{extract_aac_access_unit, extract_video_access_unit};
 use bytes::{Bytes, BytesMut};
 use futures::future::FutureExt;
 use gatekeeper::Gatekeeper;
@@ -31,7 +31,6 @@ pub struct Connection {
     session: Option<ServerSession>,
     state: State,
     pub metadata: Option<StreamMetadata>,
-    api_addr: Option<String>,
     sps_pps: Option<Bytes>,
     tx: mpsc::Sender<AccessUnit>,
     tx_shutdown: watch::Sender<()>,
@@ -53,7 +52,6 @@ impl Connection {
             session: None,
             state: State::Waiting,
             metadata: None,
-            api_addr: None,
             sps_pps: None,
             tx,
             tx_shutdown,
@@ -67,7 +65,7 @@ impl Connection {
     pub async fn start_handshake(
         self,
         mut stream: TcpStream,
-        tx_key: oneshot::Sender<String>,
+        tx_key: oneshot::Sender<RtmpStreamInfo>,
     ) -> Result<(), Box<dyn std::error::Error + Sync + Send>> {
         let mut handshake = Handshake::new(PeerType::Server);
         let server_p0_and_1 = handshake.generate_outbound_p0_and_p1()?;
@@ -100,7 +98,7 @@ impl Connection {
         mut self,
         stream: TcpStream,
         received_bytes: Vec<u8>,
-        tx_key: oneshot::Sender<String>,
+        tx_key: oneshot::Sender<RtmpStreamInfo>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let (stream_reader, stream_writer) = tokio::io::split(stream);
         let (read_bytes_sender, mut read_bytes_receiver) = mpsc::unbounded_channel();
@@ -130,12 +128,14 @@ impl Connection {
             let action = self.handle_session_results(&mut results, &mut write_bytes_sender)?;
             if action == ConnectionAction::New {
                 match self.state {
-                    State::Publishing {
-                        ref app_name,
-                        ref stream_key,
-                    } => {
-                        if let Some(sender) = key_sender.take() {
-                            sender.send(stream_key.clone());
+                    State::Publishing { .. } => {
+                        if let (Some(sender), Some(key), Some(id)) =
+                            (key_sender.take(), self.authed_key.as_ref(), self.authed_id)
+                        {
+                            let _ = sender.send(RtmpStreamInfo {
+                                key: key.clone(),
+                                id,
+                            });
                         }
                     }
                     _ => {}
@@ -223,7 +223,7 @@ impl Connection {
             ServerSessionEvent::PublishStreamRequested {
                 request_id,
                 app_name,
-                mode,
+                mode: _,
                 stream_key,
             } => {
                 let sk = match self.gatekeeper.streamkey(&stream_key) {
@@ -287,17 +287,11 @@ impl Connection {
             ServerSessionEvent::VideoDataReceived {
                 timestamp, data, ..
             } => {
-                let is_key_frame = is_video_keyframe(&data);
-                let sps_pps = self.sps_pps.as_ref();
-
-                if let Ok((mut au, is_avcc)) =
-                    flv::extract_au(data, timestamp.value as i64, sps_pps)
+                if let Some(video) =
+                    extract_video_access_unit(data, timestamp.value as u64, self.sps_pps.as_ref())
                 {
-                    if is_avcc {
-                        self.sps_pps = Some(au.data.clone());
-                    }
-                    if is_key_frame {
-                        au.key = true;
+                    if video.is_sequence_header {
+                        self.sps_pps = Some(video.access_unit.data.clone());
                     }
 
                     if let (Some(k), Some(id)) = (self.authed_key.as_deref(), self.authed_id) {
@@ -307,7 +301,7 @@ impl Connection {
                         }
                     }
 
-                    match self.tx.try_send(au) {
+                    match self.tx.try_send(video.access_unit) {
                         Ok(_) => return Ok(ConnectionAction::None),
                         Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                             return Ok(ConnectionAction::None)
@@ -326,7 +320,15 @@ impl Connection {
                     if let (Some(channels), Some(sample_rate)) =
                         (m.audio_channels, m.audio_sample_rate)
                     {
-                        let data = ensure_adts_header(data, channels as u8, sample_rate);
+                        let Some(au) = extract_aac_access_unit(
+                            data,
+                            timestamp.value as u64,
+                            channels as u8,
+                            sample_rate,
+                            0,
+                        ) else {
+                            return Ok(ConnectionAction::None);
+                        };
 
                         if let (Some(k), Some(id)) = (self.authed_key.as_deref(), self.authed_id) {
                             self.up_counter = self.up_counter.wrapping_add(1);
@@ -335,14 +337,7 @@ impl Connection {
                             }
                         }
 
-                        match self.tx.try_send(AccessUnit {
-                            data,
-                            dts: timestamp.value as u64,
-                            pts: timestamp.value as u64,
-                            key: false,
-                            stream_type: access_unit::PSI_STREAM_AAC,
-                            id: 0,
-                        }) {
+                        match self.tx.try_send(au) {
                             Ok(_) => return Ok(ConnectionAction::None),
                             Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                                 return Ok(ConnectionAction::None)
@@ -426,10 +421,6 @@ async fn connection_writer(
 
     info!("Connection {}: Writer disconnected", connection_id);
     Ok(())
-}
-
-fn is_video_keyframe(data: &Bytes) -> bool {
-    data.len() >= 2 && data[0] == 0x17 && data[1] != 0x00
 }
 
 fn spawn<F, E>(future: F)

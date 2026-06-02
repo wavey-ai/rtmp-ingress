@@ -1,12 +1,13 @@
 use crate::listener::Connection;
+use crate::{RtmpIngestEvent, RtmpStreamInfo};
 use access_unit::AccessUnit;
-use gatekeeper::{Gatekeeper, Streamkey};
+use gatekeeper::Gatekeeper;
 use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot, watch};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 pub async fn start_rtmp_listener(
     base64_encoded_pem_key: String,
@@ -16,14 +17,14 @@ pub async fn start_rtmp_listener(
         oneshot::Receiver<()>,
         oneshot::Receiver<()>,
         watch::Sender<()>,
-        mpsc::Receiver<(String, AccessUnit)>,
+        mpsc::Receiver<RtmpIngestEvent>,
     ),
     Box<dyn Error + Send + Sync>,
 > {
     let (shutdown_tx, mut shutdown_rx) = watch::channel(());
     let (up_tx, up_rx) = oneshot::channel();
     let (fin_tx, fin_rx) = oneshot::channel();
-    let (out_tx, out_rx) = mpsc::channel::<(String, AccessUnit)>(1024);
+    let (out_tx, out_rx) = mpsc::channel::<RtmpIngestEvent>(1024);
 
     let gatekeeper = Arc::new(Gatekeeper::new(&base64_encoded_pem_key)?);
 
@@ -50,7 +51,7 @@ pub async fn start_rtmp_listener(
                     tokio::spawn(async move {
                         let (tx, mut rx) = mpsc::channel::<AccessUnit>(16);
                         let (close_tx, _close_rx) = watch::channel(());
-                        let (tx_key, rx_key) = oneshot::channel::<String>();
+                        let (tx_key, rx_key) = oneshot::channel::<RtmpStreamInfo>();
 
                         let gatekeeper_inner = gatekeeper.clone();
 
@@ -64,15 +65,23 @@ pub async fn start_rtmp_listener(
                         }
 
                         tokio::spawn(async move {
-                            let key = match rx_key.await {
-                                Ok(k) => k,
+                            let stream = match rx_key.await {
+                                Ok(stream) => stream,
                                 Err(_) => return,
                             };
                             while let Some(au) = rx.recv().await {
-                                if out_tx.send((key.clone(), au)).await.is_err() {
+                                if out_tx
+                                    .send(RtmpIngestEvent::AccessUnit {
+                                        stream: stream.clone(),
+                                        access_unit: au,
+                                    })
+                                    .await
+                                    .is_err()
+                                {
                                     break;
                                 }
                             }
+                            let _ = out_tx.send(RtmpIngestEvent::End { stream }).await;
                         });
                     });
                 }
