@@ -32,6 +32,7 @@ pub struct Connection {
     state: State,
     pub metadata: Option<StreamMetadata>,
     sps_pps: Option<Bytes>,
+    aac_config: Option<AacAudioConfig>,
     tx: mpsc::Sender<AccessUnit>,
     tx_shutdown: watch::Sender<()>,
     gatekeeper: Arc<Gatekeeper>,
@@ -53,6 +54,7 @@ impl Connection {
             state: State::Waiting,
             metadata: None,
             sps_pps: None,
+            aac_config: None,
             tx,
             tx_shutdown,
             gatekeeper,
@@ -126,19 +128,14 @@ impl Connection {
 
         loop {
             let action = self.handle_session_results(&mut results, &mut write_bytes_sender)?;
-            if action == ConnectionAction::New {
-                match self.state {
-                    State::Publishing { .. } => {
-                        if let (Some(sender), Some(key), Some(id)) =
-                            (key_sender.take(), self.authed_key.as_ref(), self.authed_id)
-                        {
-                            let _ = sender.send(RtmpStreamInfo {
-                                key: key.clone(),
-                                id,
-                            });
-                        }
-                    }
-                    _ => {}
+            if action == ConnectionAction::New && matches!(self.state, State::Publishing { .. }) {
+                if let (Some(sender), Some(key), Some(id)) =
+                    (key_sender.take(), self.authed_key.as_ref(), self.authed_id)
+                {
+                    let _ = sender.send(RtmpStreamInfo {
+                        key: key.clone(),
+                        id,
+                    });
                 }
             }
             if action == ConnectionAction::Disconnect {
@@ -181,7 +178,7 @@ impl Connection {
         for result in results.drain(..) {
             match result {
                 ServerSessionResult::OutboundResponse(packet) => {
-                    if !send(&byte_writer, packet) {
+                    if !send(byte_writer, packet) {
                         break;
                     }
                 }
@@ -230,7 +227,7 @@ impl Connection {
                     Ok(v) => v,
                     Err(_) => {
                         if let Ok(results) = self.session.as_mut().unwrap().reject_request(
-                            request_id.clone(),
+                            request_id,
                             "NetStream.Publish.Denied",
                             "Unauthorized or invalid stream key",
                         ) {
@@ -247,7 +244,7 @@ impl Connection {
                 };
 
                 self.state = State::PublishRequested {
-                    request_id: request_id.clone(),
+                    request_id,
                     app_name: app_name.clone(),
                     stream_key: stream_key.clone(),
                 };
@@ -296,7 +293,7 @@ impl Connection {
 
                     if let (Some(k), Some(id)) = (self.authed_key.as_deref(), self.authed_id) {
                         self.up_counter = self.up_counter.wrapping_add(1);
-                        if self.up_counter % METRICS_INTERVAL == 0 {
+                        if self.up_counter.is_multiple_of(METRICS_INTERVAL) {
                             info!("{} key={} id={}", RTP_UP, k, id);
                         }
                     }
@@ -316,36 +313,45 @@ impl Connection {
             ServerSessionEvent::AudioDataReceived {
                 timestamp, data, ..
             } => {
-                if let Some(m) = &self.metadata {
-                    if let (Some(channels), Some(sample_rate)) =
-                        (m.audio_channels, m.audio_sample_rate)
-                    {
-                        let Some(au) = extract_aac_access_unit(
-                            data,
-                            timestamp.value as u64,
-                            channels as u8,
-                            sample_rate,
-                            0,
-                        ) else {
-                            return Ok(ConnectionAction::None);
-                        };
+                if let Some(config) = parse_rtmp_aac_config(&data) {
+                    self.aac_config = Some(config);
+                    return Ok(ConnectionAction::None);
+                }
 
-                        if let (Some(k), Some(id)) = (self.authed_key.as_deref(), self.authed_id) {
-                            self.up_counter = self.up_counter.wrapping_add(1);
-                            if self.up_counter % METRICS_INTERVAL == 0 {
-                                info!("{} key={} id={}", RTP_UP, k, id);
-                            }
-                        }
+                let config = self.aac_config.or_else(|| {
+                    let metadata = self.metadata.as_ref()?;
+                    Some(AacAudioConfig {
+                        channels: metadata.audio_channels? as u8,
+                        sample_rate: metadata.audio_sample_rate?,
+                    })
+                });
+                let Some(config) = config else {
+                    return Ok(ConnectionAction::None);
+                };
+                let Some(au) = extract_aac_access_unit(
+                    data,
+                    timestamp.value as u64,
+                    config.channels,
+                    config.sample_rate,
+                    0,
+                ) else {
+                    return Ok(ConnectionAction::None);
+                };
 
-                        match self.tx.try_send(au) {
-                            Ok(_) => return Ok(ConnectionAction::None),
-                            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                                return Ok(ConnectionAction::None)
-                            }
-                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                                return Ok(ConnectionAction::Disconnect)
-                            }
-                        }
+                if let (Some(k), Some(id)) = (self.authed_key.as_deref(), self.authed_id) {
+                    self.up_counter = self.up_counter.wrapping_add(1);
+                    if self.up_counter.is_multiple_of(METRICS_INTERVAL) {
+                        info!("{} key={} id={}", RTP_UP, k, id);
+                    }
+                }
+
+                match self.tx.try_send(au) {
+                    Ok(_) => return Ok(ConnectionAction::None),
+                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                        return Ok(ConnectionAction::None)
+                    }
+                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                        return Ok(ConnectionAction::Disconnect)
                     }
                 }
             }
@@ -359,6 +365,77 @@ impl Connection {
 
         Ok(ConnectionAction::None)
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct AacAudioConfig {
+    pub(crate) channels: u8,
+    pub(crate) sample_rate: u32,
+}
+
+/// Reads the MPEG-4 AudioSpecificConfig carried by an RTMP AAC sequence header.
+///
+/// RTMP metadata is optional and is frequently omitted by contribution
+/// encoders. The sequence header is the authoritative source for the AAC
+/// sample rate and channel layout used by subsequent raw audio packets.
+pub(crate) fn parse_rtmp_aac_config(packet: &[u8]) -> Option<AacAudioConfig> {
+    const AUDIO_CODEC_AAC: u8 = 10;
+    const AAC_SEQUENCE_HEADER: u8 = 0;
+    const SAMPLE_RATES: [u32; 13] = [
+        96_000, 88_200, 64_000, 48_000, 44_100, 32_000, 24_000, 22_050, 16_000, 12_000, 11_025,
+        8_000, 7_350,
+    ];
+
+    if packet.len() < 4 || packet[0] >> 4 != AUDIO_CODEC_AAC || packet[1] != AAC_SEQUENCE_HEADER {
+        return None;
+    }
+
+    let config = &packet[2..];
+    let mut bit_offset = 0usize;
+    let audio_object_type = read_bits(config, &mut bit_offset, 5)?;
+    if audio_object_type == 0 {
+        return None;
+    }
+    if audio_object_type == 31 {
+        read_bits(config, &mut bit_offset, 6)?;
+    }
+
+    let sample_rate_index = read_bits(config, &mut bit_offset, 4)? as usize;
+    let sample_rate = if sample_rate_index == 15 {
+        read_bits(config, &mut bit_offset, 24)?
+    } else {
+        *SAMPLE_RATES.get(sample_rate_index)?
+    };
+    if sample_rate == 0 {
+        return None;
+    }
+
+    let channel_configuration = read_bits(config, &mut bit_offset, 4)? as u8;
+    let channels = match channel_configuration {
+        1..=6 => channel_configuration,
+        7 => 8,
+        _ => return None,
+    };
+
+    Some(AacAudioConfig {
+        channels,
+        sample_rate,
+    })
+}
+
+fn read_bits(data: &[u8], bit_offset: &mut usize, bit_count: usize) -> Option<u32> {
+    if bit_count > 32 || bit_offset.checked_add(bit_count)? > data.len().checked_mul(8)? {
+        return None;
+    }
+
+    let mut value = 0u32;
+    for _ in 0..bit_count {
+        let byte = *data.get(*bit_offset / 8)?;
+        let bit = (byte >> (7 - (*bit_offset % 8))) & 1;
+        value = (value << 1) | u32::from(bit);
+        *bit_offset += 1;
+    }
+    Some(value)
 }
 
 async fn connection_reader(
@@ -436,8 +513,35 @@ where
 }
 
 fn send<T>(sender: &UnboundedSender<T>, message: T) -> bool {
-    match sender.send(message) {
-        Ok(_) => true,
-        Err(_) => false,
+    sender.send(message).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_aac_sequence_header_without_rtmp_metadata() {
+        assert_eq!(
+            parse_rtmp_aac_config(&[0xaf, 0x00, 0x11, 0x90]),
+            Some(AacAudioConfig {
+                channels: 2,
+                sample_rate: 48_000,
+            })
+        );
+        assert_eq!(
+            parse_rtmp_aac_config(&[0xae, 0x00, 0x12, 0x08]),
+            Some(AacAudioConfig {
+                channels: 1,
+                sample_rate: 44_100,
+            })
+        );
+    }
+
+    #[test]
+    fn ignores_raw_aac_and_malformed_sequence_headers() {
+        assert_eq!(parse_rtmp_aac_config(&[0xaf, 0x01, 0x11, 0x90]), None);
+        assert_eq!(parse_rtmp_aac_config(&[0xaf, 0x00, 0x11]), None);
+        assert_eq!(parse_rtmp_aac_config(&[0x2f, 0x00, 0x11, 0x90]), None);
     }
 }

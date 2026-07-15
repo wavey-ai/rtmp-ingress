@@ -213,6 +213,7 @@ impl<A: RtmpAuth> RtmpUploadIngest<A> {
     }
 }
 
+use crate::listener::{parse_rtmp_aac_config, AacAudioConfig};
 use boxer::rtmp::{extract_aac_access_unit, extract_video_access_unit};
 use rml_rtmp::handshake::{Handshake, HandshakeProcessResult, PeerType};
 use rml_rtmp::sessions::{
@@ -285,11 +286,11 @@ where
     }
 
     let mut app_name = String::new();
-    let mut stream_key = String::new();
     let mut publishing = false;
     let mut headers_written = false;
     let mut metadata: Option<StreamMetadata> = None;
     let mut sps_pps: Option<Bytes> = None;
+    let mut aac_config: Option<AacAudioConfig> = None;
     let mut au_count = 0u64;
 
     let slot_bytes = service.config().slot_bytes();
@@ -323,7 +324,7 @@ where
                             stream_key: key,
                             mode: _,
                         } => {
-                            stream_key = key;
+                            let stream_key = key;
 
                             // Auth check
                             if !auth.authenticate(&app_name, &stream_key) {
@@ -414,36 +415,42 @@ where
                             data, timestamp, ..
                         } => {
                             if publishing && headers_written {
-                                if let Some(ref meta) = metadata {
-                                    if let (Some(channels), Some(sample_rate)) =
-                                        (meta.audio_channels, meta.audio_sample_rate)
-                                    {
-                                        let Some(au) = extract_aac_access_unit(
-                                            data,
-                                            timestamp.value as u64,
-                                            channels as u8,
-                                            sample_rate as u32,
-                                            au_count,
-                                        ) else {
-                                            continue;
-                                        };
-                                        au_count += 1;
+                                if let Some(config) = parse_rtmp_aac_config(&data) {
+                                    aac_config = Some(config);
+                                    continue;
+                                }
 
-                                        let serialized = serialize_access_unit(&au);
-                                        pending.extend_from_slice(&serialized);
+                                let config = aac_config.or_else(|| {
+                                    let metadata = metadata.as_ref()?;
+                                    Some(AacAudioConfig {
+                                        channels: metadata.audio_channels? as u8,
+                                        sample_rate: metadata.audio_sample_rate?,
+                                    })
+                                });
+                                let Some(config) = config else {
+                                    continue;
+                                };
+                                let Some(au) = extract_aac_access_unit(
+                                    data,
+                                    timestamp.value as u64,
+                                    config.channels,
+                                    config.sample_rate,
+                                    au_count,
+                                ) else {
+                                    continue;
+                                };
+                                au_count += 1;
 
-                                        // Write full slots
-                                        while pending.len() >= slot_bytes {
-                                            let chunk: Vec<u8> =
-                                                pending.drain(..slot_bytes).collect();
-                                            service
-                                                .append_request_body(stream_id, Bytes::from(chunk))
-                                                .await
-                                                .map_err(|e| {
-                                                    format!("Failed to write body: {}", e)
-                                                })?;
-                                        }
-                                    }
+                                let serialized = serialize_access_unit(&au);
+                                pending.extend_from_slice(&serialized);
+
+                                // Write full slots
+                                while pending.len() >= slot_bytes {
+                                    let chunk: Vec<u8> = pending.drain(..slot_bytes).collect();
+                                    service
+                                        .append_request_body(stream_id, Bytes::from(chunk))
+                                        .await
+                                        .map_err(|e| format!("Failed to write body: {}", e))?;
                                 }
                             }
                         }
