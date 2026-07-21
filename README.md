@@ -1,21 +1,32 @@
 # RTMP ingress
 
 `rtmp-ingress` receives RTMP publish sessions and emits typed media access units.
+It parses H.264 video and AAC audio from FLV messages.
 
-The listener validates stream keys with `wavey-gatekeeper`. It parses H.264 video and AAC audio from the RTMP session.
+The listener validates stream keys with `wavey-gatekeeper`.
+Applications receive each media unit through a typed Rust event.
 
 ## Add the crate
 
-Add the dependency to your `Cargo.toml` file:
+Add the dependency to `Cargo.toml`:
 
 ```toml
 [dependencies]
-rtmp-ingress = "0.1.0"
+rtmp-ingress = "0.1.1"
 ```
 
-## Start the listener
+Enable `upload-response` to connect RTMP sessions to `av-upload-response`.
+Enable `tls` to accept RTMPS sessions through rustls.
 
-Call `start_rtmp_listener` with a gatekeeper key and a socket address. The function returns media events and shutdown controls.
+```toml
+[dependencies]
+rtmp-ingress = { version = "0.1.1", features = ["tls"] }
+```
+
+## Start the event listener
+
+Call `start_rtmp_listener` with a gatekeeper key and socket address.
+The function returns the media events and shutdown controls.
 
 ```rust
 use rtmp_ingress::ingress::start_rtmp_listener;
@@ -24,32 +35,29 @@ let (_up, _finished, shutdown, mut events) =
     start_rtmp_listener(gatekeeper_key, "0.0.0.0:1935".parse()?).await?;
 ```
 
-## Acknowledgements
+## Start the upload service
 
-This crate uses [rml_rtmp](https://github.com/wavey-ai/rust-media-libs) for the RTMP protocol. This project is a fork of [rust-media-libs](https://github.com/KallDrexx/rust-media-libs).
+Use `RtmpUploadIngest` with an `UploadResponseService` instance.
 
-### rust-media-libs
+```rust
+use rtmp_ingress::upload::RtmpUploadIngest;
 
-Matthew Shapiro created the original `rust-media-libs` project. The project provides these crates:
+let ingest = RtmpUploadIngest::new(service);
+let shutdown = ingest.start("0.0.0.0:1935".parse()?).await?;
+```
 
-- `rml_amf0` for AMF0 serialization and deserialization.
-- `rml_rtmp` for high-level and low-level RTMP protocol APIs.
+The `tls` feature adds `start_tls` for RTMPS.
+It also enables the required `upload-response` feature.
 
-The original project uses the MIT and Apache-2.0 licenses.
+## Acknowledgments
 
-### Code Attribution
+This crate uses the Wavey fork of `rml_rtmp` for RTMP protocol processing.
+Matthew Shapiro created the original `rust-media-libs` project.
 
-| Component | Source | License |
-|-----------|--------|---------|
-| RTMP handshake | rust-media-libs | MIT/Apache-2.0 |
-| RTMP chunk parsing | rust-media-libs | MIT/Apache-2.0 |
-| RTMP session management | rust-media-libs | MIT/Apache-2.0 |
-| AMF0 encoding/decoding | rust-media-libs | MIT/Apache-2.0 |
-| FLV parsing (`flv.rs`) | This project | - |
-| TLS integration | This project | - |
+The upstream project provides `rml_amf0` and `rml_rtmp`.
+The upstream code uses the MIT and Apache-2.0 licenses.
 
 ## License
 
-This crate uses the MIT license. Refer to [LICENSE](LICENSE) for the license text.
-
-The upstream `rust-media-libs` project uses the MIT and Apache-2.0 licenses.
+This crate uses the MIT license.
+See [LICENSE](LICENSE) for the license text.

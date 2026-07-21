@@ -539,3 +539,48 @@ where
     upload_stream.close().await;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{deserialize_access_unit, serialize_access_unit};
+    use access_unit::AccessUnit;
+    use bytes::Bytes;
+
+    #[test]
+    fn access_unit_round_trip_is_exact() {
+        let expected = AccessUnit {
+            stream_type: 0x1b,
+            key: true,
+            id: 42,
+            dts: 90_000,
+            pts: 93_600,
+            data: Bytes::from_static(b"rtmp-access-unit"),
+        };
+
+        let encoded = serialize_access_unit(&expected);
+        let (actual, consumed) = deserialize_access_unit(&encoded).expect("complete access unit");
+
+        assert_eq!(consumed, encoded.len());
+        assert_eq!(actual.stream_type, expected.stream_type);
+        assert_eq!(actual.key, expected.key);
+        assert_eq!(actual.id, expected.id);
+        assert_eq!(actual.dts, expected.dts);
+        assert_eq!(actual.pts, expected.pts);
+        assert_eq!(actual.data, expected.data);
+    }
+
+    #[test]
+    fn access_unit_decode_waits_for_complete_payload() {
+        let access_unit = AccessUnit {
+            stream_type: 0x0f,
+            key: false,
+            id: 7,
+            dts: 1_024,
+            pts: 1_024,
+            data: Bytes::from_static(b"aac"),
+        };
+        let encoded = serialize_access_unit(&access_unit);
+
+        assert!(deserialize_access_unit(&encoded[..encoded.len() - 1]).is_none());
+    }
+}
