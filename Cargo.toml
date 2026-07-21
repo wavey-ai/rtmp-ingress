@@ -3,31 +3,22 @@ name = "rtmp-ingress"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+description = "RTMP contribution ingress for Wavey media services"
+repository = "https://github.com/wavey-ai/rtmp-ingress"
 
 [features]
 default = []
-upload-response = ["dep:upload-response", "dep:http-pack"]
-tls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
 
 [dependencies]
 tokio = { version = "1.35.1", features = ["full"] }
 bytes = "1"
 chrono = "0.4.38"
-rml_rtmp = { git = "https://github.com/wavey-ai/rust-media-libs.git" }
+rml_rtmp = "0.8.0"
 tracing = "0.1.40"
 futures = "0.3.30"
-xmpegts = { git = "https://github.com/wavey-ai/xiu.git" }
-boxer = { git = "https://github.com/wavey-ai/boxer.git" }
+xmpegts = "0.2.4"
+boxer = { package = "wavey-boxer", version = "0.1.0" }
 srt-tokio = "0.4.4"
 tokio-stream = "0.1.15"
-access-unit = { git = "https://github.com/wavey-ai/access-unit.git" }
-gatekeeper = { git = "https://github.com/wavey-ai/gatekeeper.git" }
-
-# Optional deps for upload-response integration
-upload-response = { git = "https://github.com/wavey-ai/web-services.git", branch = "codex/web-studio-audio-llhls-switch", package = "upload-response", optional = true }
-http-pack = { git = "https://github.com/wavey-ai/http-pack.git", optional = true }
-
-# Optional TLS deps
-tokio-rustls = { version = "0.26", optional = true }
-rustls = { version = "0.23", optional = true }
-rustls-pemfile = { version = "2", optional = true }
+access-unit = "0.1.3"
+gatekeeper = { package = "wavey-gatekeeper", version = "0.1.0" }

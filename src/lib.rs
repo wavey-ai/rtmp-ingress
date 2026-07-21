@@ -3,9 +3,6 @@ pub mod ingress;
 mod listener;
 mod state;
 
-#[cfg(feature = "upload-response")]
-pub mod upload;
-
 use access_unit::AccessUnit;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

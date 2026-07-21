@@ -1,46 +1,41 @@
-# rtmp-ingress
+# RTMP ingress
 
-RTMP/RTMPS ingest server for Rust with optional TLS support.
+`rtmp-ingress` receives RTMP publish sessions and emits typed media access units.
 
-## Features
+The listener validates stream keys with `wavey-gatekeeper`. It parses H.264 video and AAC audio from the RTMP session.
 
-- RTMP ingest with video/audio parsing
-- Optional TLS support (RTMPS) via `tls` feature
-- Integration with `upload-response` service via `upload-response` feature
-- FLV demuxing and AccessUnit extraction
-- H.264 video and AAC audio support
+## Add the crate
 
-## Usage
+Add the dependency to your `Cargo.toml` file:
 
-```rust
-use rtmp_ingress::upload::RtmpUploadIngest;
-
-// Plain RTMP
-let ingest = RtmpUploadIngest::new(service);
-let shutdown = ingest.start(addr).await?;
-
-// RTMPS (TLS) - requires "tls" feature
-let ingest = RtmpUploadIngest::new(service);
-let shutdown = ingest.start_tls(addr, cert_pem, key_pem).await?;
+```toml
+[dependencies]
+rtmp-ingress = "0.1.0"
 ```
 
-## Features
+## Start the listener
 
-- `upload-response` - Integration with upload-response shared memory cache
-- `tls` - RTMPS (TLS) support via rustls
+Call `start_rtmp_listener` with a gatekeeper key and a socket address. The function returns media events and shutdown controls.
+
+```rust
+use rtmp_ingress::ingress::start_rtmp_listener;
+
+let (_up, _finished, shutdown, mut events) =
+    start_rtmp_listener(gatekeeper_key, "0.0.0.0:1935".parse()?).await?;
+```
 
 ## Acknowledgements
 
-This crate uses [rml_rtmp](https://github.com/wavey-ai/rust-media-libs) for RTMP protocol handling, which is a fork of [KallDrexx/rust-media-libs](https://github.com/KallDrexx/rust-media-libs).
+This crate uses [rml_rtmp](https://github.com/wavey-ai/rust-media-libs) for the RTMP protocol. This project is a fork of [rust-media-libs](https://github.com/KallDrexx/rust-media-libs).
 
 ### rust-media-libs
 
-The original rust-media-libs was created by [Matthew Shapiro (KallDrexx)](https://github.com/KallDrexx) and provides:
+Matthew Shapiro created the original `rust-media-libs` project. The project provides these crates:
 
-- **rml_amf0** - AMF0 serialization/deserialization
-- **rml_rtmp** - High and low level RTMP protocol APIs
+- `rml_amf0` for AMF0 serialization and deserialization.
+- `rml_rtmp` for high-level and low-level RTMP protocol APIs.
 
-The original work is dual-licensed under MIT and Apache-2.0.
+The original project uses the MIT and Apache-2.0 licenses.
 
 ### Code Attribution
 
@@ -52,10 +47,9 @@ The original work is dual-licensed under MIT and Apache-2.0.
 | AMF0 encoding/decoding | rust-media-libs | MIT/Apache-2.0 |
 | FLV parsing (`flv.rs`) | This project | - |
 | TLS integration | This project | - |
-| upload-response integration | This project | - |
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+This crate uses the MIT license. Refer to [LICENSE](LICENSE) for the license text.
 
-This license is compatible with the upstream rust-media-libs MIT/Apache-2.0 dual license.
+The upstream `rust-media-libs` project uses the MIT and Apache-2.0 licenses.
